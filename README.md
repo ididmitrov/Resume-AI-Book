@@ -14,7 +14,8 @@ https://ididmitrov.github.io/Prompt-Engineering-Resume-Book/
 
 - `index.html`
 - `css/`
-- `js/` (`lectures.js` са резюметата, `app.js` е логиката)
+- `js/` (`lectures.js` са резюметата, `practice.js` е каталогът, `sheets.js` е текстът на попълнените листове, `markdown.js` ги рендира, `app.js` е логиката)
+- `practice/` — попълнените упражнения и изпитната подготовка
 - `.nojekyll`
 - `.gitignore`
 - `README.md`
