@@ -5,7 +5,12 @@
     query: "",
     topicId: topics[0].id,
     activeId: null,
+    view: "lectures",
+    workbookId: null,
+    sheetStatus: "idle",
   };
+
+  const sheetCache = {};
 
   function pad(n) {
     return String(n).padStart(2, "0");
@@ -131,34 +136,161 @@
     `;
   }
 
+  function renderHeader() {
+    const modes = [
+      ["lectures", "Лекции"],
+      ["practice", "Практика"],
+    ]
+      .map(
+        ([id, label]) => `
+          <button
+            class="mode${state.view === id ? " is-active" : ""}"
+            data-action="mode"
+            data-mode="${id}"
+            aria-pressed="${state.view === id}"
+          >${label}</button>`
+      )
+      .join("");
+
+    return `
+      <header class="wrap topbar">
+        <button class="brand" data-action="home">
+          <span class="brand-kicker">${escapeHtml(course.subtitle)}</span>
+          <span class="brand-name">${escapeHtml(course.title)}</span>
+        </button>
+        <nav class="modes" aria-label="Раздели">${modes}</nav>
+        <div class="topbar-meta">${escapeHtml(course.instructor)}</div>
+      </header>`;
+  }
+
+  function renderPracticeHome(filtered) {
+    const cards =
+      filtered.length === 0
+        ? `<p class="empty">Няма такова упражнение. Пробвай друга дума.</p>`
+        : `<section class="grid">${filtered
+            .map(
+              (book) => `
+                <button class="card" data-action="workbook" data-id="${book.id}">
+                  <div class="card-top">
+                    <span class="num${book.code.length > 2 ? " num-word" : ""}">${escapeHtml(book.code)}</span>
+                    <span class="tag">Попълнено</span>
+                  </div>
+                  <div>
+                    <h2>${escapeHtml(book.title)}</h2>
+                    <h3>${escapeHtml(book.subtitle)}</h3>
+                  </div>
+                  <p>${escapeHtml(book.teaser)}</p>
+                  <div class="tags"><span class="tag">${escapeHtml(book.tag)}</span></div>
+                </button>`
+            )
+            .join("")}</section>`;
+
+    const count =
+      filtered.length === 1 ? "1 лист" : `${filtered.length} листа`;
+
+    return `
+      <main class="wrap">
+        <section class="hero">
+          <h1>${escapeHtml(practiceIntro.title)}</h1>
+          <p>${escapeHtml(practiceIntro.tagline)}</p>
+        </section>
+        <div class="toolbar">
+          <input
+            class="search"
+            data-action="search"
+            value="${escapeHtml(state.query)}"
+            placeholder="Търси упражнение…"
+            aria-label="Търсене в упражненията"
+          />
+          <div class="count">${count}</div>
+        </div>
+        ${cards}
+      </main>`;
+  }
+
+  function renderSheet() {
+    const book = workbooks.find((item) => item.id === state.workbookId);
+    const cached = sheetCache[state.workbookId];
+    const kicker = book.tag === "изпит" ? "Подготовка за изпит" : "Попълнено упражнение";
+    let body = `<p class="lede">${
+      state.sheetStatus === "error"
+        ? "Листът не се зареди. Презареди страницата и опитай пак."
+        : "Зарежда се попълненият лист…"
+    }</p>`;
+
+    if (cached) {
+      const toc = cached.toc
+        .map(
+          (item) =>
+            `<button class="toc-link toc-l${item.level}" data-action="jump" data-id="${item.id}">${escapeHtml(item.text)}</button>`
+        )
+        .join("");
+      body = `
+        <div class="sheet-layout">
+          <nav class="toc" aria-label="Съдържание на листа">${toc}</nav>
+          <article class="paper sheet">${cached.html}</article>
+        </div>`;
+    }
+
+    return `
+      <main class="wrap lecture">
+        <button class="back" data-action="practice-home">← Към упражненията</button>
+        <p class="sheet-kicker">${escapeHtml(book.code)} · ${escapeHtml(kicker)}</p>
+        ${body}
+      </main>`;
+  }
+
+  function openWorkbook(id) {
+    state.view = "practice";
+    state.workbookId = id;
+    state.activeId = null;
+    window.scrollTo(0, 0);
+    const text = sheets[id];
+    if (!text) {
+      state.sheetStatus = "error";
+      render();
+      return;
+    }
+    if (!sheetCache[id]) sheetCache[id] = renderMarkdown(text);
+    state.sheetStatus = "ready";
+    render();
+  }
+
   function render() {
     const searchEl = root.querySelector(".search");
     const hadSearchFocus = document.activeElement === searchEl;
     const selectionStart = hadSearchFocus ? searchEl.selectionStart : null;
     const selectionEnd = hadSearchFocus ? searchEl.selectionEnd : null;
 
-    const active = state.activeId ? findLecture(state.activeId) : null;
-    const currentTopic = topics.find((topic) => topic.id === state.topicId) ?? topics[0];
+    const active = state.view === "lectures" && state.activeId ? findLecture(state.activeId) : null;
     const q = state.query.trim().toLowerCase();
-    const filtered = !q
-      ? currentTopic.lectures
-      : currentTopic.lectures.filter((lecture) => {
-          const hay = [lecture.title, lecture.subtitle, lecture.teaser, ...(lecture.tags || [])]
-            .join(" ")
-            .toLowerCase();
-          return hay.includes(q);
-        });
+    let main = "";
 
-    root.innerHTML = `
-      <header class="wrap topbar">
-        <button class="brand" data-action="home">
-          <span class="brand-kicker">${escapeHtml(course.subtitle)}</span>
-          <span class="brand-name">${escapeHtml(course.title)}</span>
-        </button>
-        <div class="topbar-meta">${escapeHtml(course.instructor)}</div>
-      </header>
-      ${active ? renderLecture(active) : renderHome(currentTopic, filtered)}
-    `;
+    if (state.view === "practice") {
+      if (state.workbookId) {
+        main = renderSheet();
+      } else {
+        const filtered = !q
+          ? workbooks
+          : workbooks.filter((book) =>
+              [book.title, book.subtitle, book.teaser, book.tag, book.code].join(" ").toLowerCase().includes(q)
+            );
+        main = renderPracticeHome(filtered);
+      }
+    } else {
+      const currentTopic = topics.find((topic) => topic.id === state.topicId) ?? topics[0];
+      const filtered = !q
+        ? currentTopic.lectures
+        : currentTopic.lectures.filter((lecture) => {
+            const hay = [lecture.title, lecture.subtitle, lecture.teaser, ...(lecture.tags || [])]
+              .join(" ")
+              .toLowerCase();
+            return hay.includes(q);
+          });
+      main = active ? renderLecture(active) : renderHome(currentTopic, filtered);
+    }
+
+    root.innerHTML = `${renderHeader()}${main}`;
 
     if (hadSearchFocus) {
       const nextSearch = root.querySelector(".search");
@@ -176,6 +308,16 @@
     const action = target.dataset.action;
     if (action === "home") {
       state.activeId = null;
+      state.workbookId = null;
+      state.query = "";
+      window.scrollTo(0, 0);
+      render();
+    } else if (action === "mode") {
+      state.view = target.dataset.mode;
+      state.activeId = null;
+      state.workbookId = null;
+      state.query = "";
+      window.scrollTo(0, 0);
       render();
     } else if (action === "topic") {
       state.topicId = target.dataset.id;
@@ -191,6 +333,16 @@
       state.activeId = null;
       window.scrollTo(0, 0);
       render();
+    } else if (action === "workbook") {
+      openWorkbook(target.dataset.id);
+    } else if (action === "practice-home") {
+      state.workbookId = null;
+      state.query = "";
+      window.scrollTo(0, 0);
+      render();
+    } else if (action === "jump") {
+      const destination = document.getElementById(target.dataset.id);
+      if (destination) destination.scrollIntoView({ behavior: "smooth", block: "start" });
     }
   });
 
