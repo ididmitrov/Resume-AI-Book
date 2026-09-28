@@ -4,7 +4,7 @@
 
 Публичен линк след GitHub Pages:
 
-https://ididmitrov.github.io/Prompt-Engineering-Resume-Book/
+[https://ididmitrov.github.io/Prompt-Engineering-Resume-Book/](https://ididmitrov.github.io/Resume-AI-Book/)
 
 Сайтът е само HTML, CSS и JavaScript — без Node, Vite или build стъпка.
 
